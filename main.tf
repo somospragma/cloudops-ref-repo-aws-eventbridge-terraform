@@ -171,3 +171,37 @@ resource "aws_cloudwatch_event_target" "lambda_scheduled_with_dlq" {
 
   depends_on = [aws_lambda_permission.allow_eventbridge_scheduled]
 }
+
+# ============================================================================
+# SNS Target Rules
+# EventBridge rules that route events to an SNS Topic instead of Lambda.
+# Useful for fan-out: email subscriptions, cross-account SQS consumers, etc.
+# ============================================================================
+
+# EventBridge Rules (SNS target)
+resource "aws_cloudwatch_event_rule" "sns" {
+  provider = aws.project
+  for_each = var.sns_rules
+
+  name           = "${var.client}-${var.project}-${var.environment}-rule-${each.key}"
+  description    = each.value.description
+  event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
+  event_pattern  = jsonencode(each.value.event_pattern)
+  state          = each.value.enabled ? "ENABLED" : "DISABLED"
+
+  tags = merge(
+    { Name = "${var.client}-${var.project}-${var.environment}-rule-${each.key}" },
+    each.value.additional_tags
+  )
+}
+
+# EventBridge Targets → SNS Topic
+resource "aws_cloudwatch_event_target" "sns" {
+  provider = aws.project
+  for_each = var.sns_rules
+
+  rule           = aws_cloudwatch_event_rule.sns[each.key].name
+  event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
+  target_id      = "${each.key}-sns-target"
+  arn            = each.value.sns_topic_arn
+}

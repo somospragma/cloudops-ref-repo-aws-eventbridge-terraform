@@ -102,3 +102,22 @@ variable "maximum_retry_attempts" {
   type        = number
   default     = 2
 }
+
+variable "sns_rules" {
+  description = "Map of EventBridge rules with SNS topic as target. Used to fan-out domain events to SNS for further distribution (email, SQS cross-account, etc.)"
+  type = map(object({
+    description     = string
+    event_pattern   = any
+    sns_topic_arn   = string
+    enabled         = optional(bool, true)
+    additional_tags = optional(map(string), {})
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for k, v in var.sns_rules : length(v.sns_topic_arn) > 0
+    ])
+    error_message = "sns_topic_arn must not be empty for each sns_rule."
+  }
+}

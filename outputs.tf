@@ -37,3 +37,13 @@ output "dlq_arn" {
   description = "ARN of the Dead Letter Queue"
   value       = var.create_dlq ? aws_sqs_queue.dlq[0].arn : null
 }
+
+output "sns_rules" {
+  description = "Map of EventBridge SNS-target rules created"
+  value = {
+    for k, v in aws_cloudwatch_event_rule.sns : k => {
+      name = v.name
+      arn  = v.arn
+    }
+  }
+}

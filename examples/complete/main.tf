@@ -1,41 +1,46 @@
-# Ejemplo de uso del módulo EventBridge con eventos basados en patrones y programados
+# Ejemplo completo: eventos basados en patrones + eventos programados + DLQ
+
+provider "aws" {
+  alias  = "project"
+  region = "us-east-1"
+}
 
 # Funciones Lambda de ejemplo (deben existir previamente)
 resource "aws_lambda_function" "user_signup_handler" {
   filename         = "user_signup_handler.zip"
   function_name    = "user-signup-handler"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.9"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.9"
   source_code_hash = filebase64sha256("user_signup_handler.zip")
 }
 
 resource "aws_lambda_function" "order_processor" {
   filename         = "order_processor.zip"
   function_name    = "order-processor"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.9"
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.9"
   source_code_hash = filebase64sha256("order_processor.zip")
 }
 
 resource "aws_lambda_function" "daily_report" {
   filename         = "daily_report.zip"
   function_name    = "daily-report"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.9"
-  timeout         = 300
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.9"
+  timeout          = 300
   source_code_hash = filebase64sha256("daily_report.zip")
 }
 
 resource "aws_lambda_function" "cleanup_task" {
   filename         = "cleanup.zip"
   function_name    = "cleanup-task"
-  role            = aws_iam_role.lambda_role.arn
-  handler         = "index.handler"
-  runtime         = "python3.9"
-  timeout         = 600
+  role             = aws_iam_role.lambda_role.arn
+  handler          = "index.handler"
+  runtime          = "python3.9"
+  timeout          = 600
   source_code_hash = filebase64sha256("cleanup.zip")
 }
 
@@ -62,11 +67,18 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   role       = aws_iam_role.lambda_role.name
 }
 
-# Uso del módulo EventBridge con eventos basados en patrones y programados
+# Uso del módulo EventBridge
 module "eventbridge" {
-  source = "../"
+  source = "../../"
 
-  event_bus_name    = "my-application-bus"
+  providers = {
+    aws.project = aws.project
+  }
+
+  environment = "dev"
+  client      = "acme"
+  project     = "my-app"
+
   create_custom_bus = true
 
   # Reglas basadas en eventos
@@ -83,7 +95,7 @@ module "eventbridge" {
         }
       }
     }
-    
+
     "order-processing" = {
       description          = "Rule for order processing events"
       lambda_function_arn  = aws_lambda_function.order_processor.arn
@@ -107,7 +119,7 @@ module "eventbridge" {
         format      = "pdf"
       })
     }
-    
+
     "cleanup-task" = {
       description          = "Cleanup old files every hour"
       schedule_expression  = "rate(1 hour)"
@@ -117,7 +129,7 @@ module "eventbridge" {
   }
 
   create_dlq = true
-  
+
   tags = {
     Environment = "development"
     Project     = "my-app"

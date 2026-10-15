@@ -2,19 +2,54 @@
 
 ## Descripción
 
-Este módulo de Terraform proporciona una solución completa para la gestión de Amazon EventBridge, permitiendo la creación y configuración de buses de eventos personalizados, reglas de eventos basadas en patrones, reglas programadas (scheduled), targets de Lambda y colas de mensajes fallidos (Dead Letter Queue). El módulo está diseñado para facilitar la implementación de arquitecturas event-driven en AWS, siguiendo las mejores prácticas de seguridad y nomenclatura estándar.
+Este módulo de Terraform proporciona una solución completa para la gestión de Amazon EventBridge, permitiendo la creación y configuración de buses de eventos personalizados, reglas de eventos basadas en patrones, reglas programadas (scheduled), targets de **Lambda y/o SQS**, cifrado del bus con CMK propia, y colas de mensajes fallidos (Dead Letter Queue). El módulo está diseñado para facilitar la implementación de arquitecturas event-driven en AWS, siguiendo las mejores prácticas de seguridad y nomenclatura estándar.
+
+> **Novedades v1.2.0:** target **SQS** por regla (patrón bus → regla → cola SQS + DLQ, además del target Lambda original) y cifrado del bus custom con **CMK propia** (`kms_key_arn`). Cambios retrocompatibles a nivel de recursos; el único ajuste de interfaz es que ahora cada regla debe declarar `target_type` (`"lambda"` | `"sqs"`). Ver [CHANGELOG.md](./CHANGELOG.md).
 
 ## Características
 
 - **Bus de eventos personalizado**: Creación opcional de un bus de eventos personalizado o uso del bus por defecto
+- **Cifrado del bus con CMK propia**: `kms_key_arn` cifra el bus custom; vacío = cifrado por defecto de EventBridge (el módulo no crea la clave, la recibe)
 - **Reglas basadas en eventos**: Configuración de reglas que responden a patrones específicos de eventos
 - **Reglas programadas**: Soporte para eventos programados usando expresiones cron o rate
-- **Integración con Lambda**: Configuración automática de targets y permisos para funciones Lambda
-- **Dead Letter Queue**: Cola opcional para manejo de eventos fallidos con políticas de reintento
+- **Target Lambda y/o SQS por regla**: `target_type` selecciona el destino; el target SQS lleva su propia DLQ y retry policy por regla (`sqs_dead_letter_arn`, `sqs_maximum_*`)
+- **Dead Letter Queue**: Cola opcional para targets Lambda (`create_dlq`); los targets SQS declaran su DLQ por regla
 - **Transformación de entrada**: Soporte para transformar datos de entrada usando input transformers
 - **Nomenclatura estándar**: Convención de nombres consistente basada en cliente, proyecto y entorno
 - **Validaciones**: Validaciones de entrada para garantizar configuraciones correctas
 - **Etiquetado**: Soporte completo para etiquetado de recursos
+
+### Ejemplo — target SQS con cifrado KMS del bus (patrón EventBridge → SQS)
+
+```hcl
+module "eventbridge" {
+  source = "github.com/somospragma/cloudops-ref-repo-aws-eventbridge-terraform?ref=v1.2.0"
+
+  providers = { aws.project = aws.principal }
+
+  client      = "pragma"
+  project     = "sopp"
+  environment = "dev"
+
+  create_custom_bus = true
+  kms_key_arn       = module.kms.kms_info["eda"].key_arn
+
+  event_rules = {
+    "object-created" = {
+      description    = "Enruta s3:ObjectCreated a la cola del consumidor"
+      target_type    = "sqs"
+      sqs_target_arn = module.sqs.queue_arns["consumer"]
+      event_pattern = {
+        source      = ["aws.s3"]
+        detail-type = ["Object Created"]
+      }
+      # DLQ y retry propios de esta regla (independientes de create_dlq)
+      sqs_dead_letter_arn        = module.sqs.dlq_arns["consumer"]
+      sqs_maximum_retry_attempts = 5
+    }
+  }
+}
+```
 
 ## Estructura del Módulo
 
@@ -398,6 +433,5 @@ module "eventbridge_secure" {
 
 ---
 
-**Versión del Módulo**: 1.0.0  
-**Última Actualización**: 2024  
+**Versión del Módulo**: 1.2.0  
 **Mantenido por**: CloudOps Team

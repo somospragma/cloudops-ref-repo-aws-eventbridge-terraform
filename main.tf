@@ -4,6 +4,13 @@ resource "aws_cloudwatch_event_bus" "this" {
   count    = var.create_custom_bus ? 1 : 0
   name     = local.event_bus_name
 
+  # Cifrado con CMK propia (extensión). Si kms_key_arn = "" (default), el
+  # atributo se omite y EventBridge usa su cifrado por defecto — mismo
+  # comportamiento que el módulo tenía antes de esta extensión. El módulo NO
+  # crea la CMK, la recibe como variable (igual patrón que el resto del
+  # catálogo: el módulo consume, no crea, las claves KMS).
+  kms_key_identifier = var.kms_key_arn != "" ? var.kms_key_arn : null
+
   tags = merge(var.tags, {
     Name = local.event_bus_name
   })
@@ -44,7 +51,7 @@ resource "aws_cloudwatch_event_rule" "scheduled" {
 # EventBridge Targets (Lambda Functions for Event-based rules)
 resource "aws_cloudwatch_event_target" "lambda" {
   provider = aws.project
-  for_each = var.event_rules
+  for_each = local.event_rules_with_lambda
 
   rule           = aws_cloudwatch_event_rule.this[each.key].name
   event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
@@ -79,10 +86,53 @@ resource "aws_cloudwatch_event_target" "lambda" {
   depends_on = [aws_lambda_permission.allow_eventbridge]
 }
 
+# EventBridge Targets (SQS Queues for Event-based rules) — extensión
+resource "aws_cloudwatch_event_target" "sqs" {
+  provider = aws.project
+  for_each = local.event_rules_with_sqs
+
+  rule           = aws_cloudwatch_event_rule.this[each.key].name
+  event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
+  target_id      = "${each.key}-sqs-target"
+  arn            = each.value.sqs_target_arn
+  input          = each.value.input
+  input_path     = each.value.input_path
+
+  dynamic "input_transformer" {
+    for_each = each.value.input_transformer != null ? [each.value.input_transformer] : []
+    content {
+      input_paths    = input_transformer.value.input_paths
+      input_template = input_transformer.value.input_template
+    }
+  }
+
+  dynamic "dead_letter_config" {
+    for_each = each.value.sqs_dead_letter_arn != "" ? [1] : []
+    content {
+      arn = each.value.sqs_dead_letter_arn
+    }
+  }
+
+  dynamic "retry_policy" {
+    for_each = each.value.sqs_dead_letter_arn != "" ? [1] : []
+    content {
+      maximum_event_age_in_seconds = each.value.sqs_maximum_event_age_seconds
+      maximum_retry_attempts       = each.value.sqs_maximum_retry_attempts
+    }
+  }
+
+  dynamic "sqs_target" {
+    for_each = each.value.sqs_message_group_id != "" ? [1] : []
+    content {
+      message_group_id = each.value.sqs_message_group_id
+    }
+  }
+}
+
 # EventBridge Targets (Lambda Functions for Scheduled rules)
 resource "aws_cloudwatch_event_target" "lambda_scheduled" {
   provider = aws.project
-  for_each = var.scheduled_rules
+  for_each = local.scheduled_rules_with_lambda
 
   rule           = aws_cloudwatch_event_rule.scheduled[each.key].name
   event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
@@ -117,10 +167,53 @@ resource "aws_cloudwatch_event_target" "lambda_scheduled" {
   depends_on = [aws_lambda_permission.allow_eventbridge_scheduled]
 }
 
+# EventBridge Targets (SQS Queues for Scheduled rules) — extensión
+resource "aws_cloudwatch_event_target" "sqs_scheduled" {
+  provider = aws.project
+  for_each = local.scheduled_rules_with_sqs
+
+  rule           = aws_cloudwatch_event_rule.scheduled[each.key].name
+  event_bus_name = var.create_custom_bus ? aws_cloudwatch_event_bus.this[0].name : "default"
+  target_id      = "${each.key}-sqs-scheduled-target"
+  arn            = each.value.sqs_target_arn
+  input          = each.value.input
+  input_path     = each.value.input_path
+
+  dynamic "input_transformer" {
+    for_each = each.value.input_transformer != null ? [each.value.input_transformer] : []
+    content {
+      input_paths    = input_transformer.value.input_paths
+      input_template = input_transformer.value.input_template
+    }
+  }
+
+  dynamic "dead_letter_config" {
+    for_each = each.value.sqs_dead_letter_arn != "" ? [1] : []
+    content {
+      arn = each.value.sqs_dead_letter_arn
+    }
+  }
+
+  dynamic "retry_policy" {
+    for_each = each.value.sqs_dead_letter_arn != "" ? [1] : []
+    content {
+      maximum_event_age_in_seconds = each.value.sqs_maximum_event_age_seconds
+      maximum_retry_attempts       = each.value.sqs_maximum_retry_attempts
+    }
+  }
+
+  dynamic "sqs_target" {
+    for_each = each.value.sqs_message_group_id != "" ? [1] : []
+    content {
+      message_group_id = each.value.sqs_message_group_id
+    }
+  }
+}
+
 # Lambda Permissions for EventBridge (Event-based rules)
 resource "aws_lambda_permission" "allow_eventbridge" {
   provider = aws.project
-  for_each = var.event_rules
+  for_each = local.event_rules_with_lambda
 
   statement_id  = "AllowExecutionFromEventBridge-${each.key}"
   action        = "lambda:InvokeFunction"
@@ -132,7 +225,7 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 # Lambda Permissions for EventBridge (Scheduled rules)
 resource "aws_lambda_permission" "allow_eventbridge_scheduled" {
   provider = aws.project
-  for_each = var.scheduled_rules
+  for_each = local.scheduled_rules_with_lambda
 
   statement_id  = "AllowExecutionFromEventBridge-${each.key}"
   action        = "lambda:InvokeFunction"
@@ -141,7 +234,8 @@ resource "aws_lambda_permission" "allow_eventbridge_scheduled" {
   source_arn    = aws_cloudwatch_event_rule.scheduled[each.key].arn
 }
 
-# Dead Letter Queue (Optional)
+# Dead Letter Queue (Optional) — usada por los targets Lambda (var.create_dlq).
+# Los targets SQS declaran su propia DLQ por regla vía sqs_dead_letter_arn.
 resource "aws_sqs_queue" "dlq" {
   provider = aws.project
   count    = var.create_dlq ? 1 : 0

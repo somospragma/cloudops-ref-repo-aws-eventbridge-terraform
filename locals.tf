@@ -12,6 +12,11 @@ locals {
 
   dlq_name = "${var.client}-${var.project}-${var.environment}-event-bus-dlq"
 
+  # Archive y schema registry (extensión). Límites de AWS: archive 48
+  # caracteres, registry 64.
+  archive_name         = "${var.client}-${var.project}-${var.environment}-event-bus-archive"
+  schema_registry_name = "${var.client}-${var.project}-${var.environment}-schema-registry"
+
   # --- Extensión target SQS -------------------------------------------------
   # Filtra las reglas (event-based y scheduled) que declaran target Lambda vs
   # target SQS, para crear los recursos condicionalmente sin romper el

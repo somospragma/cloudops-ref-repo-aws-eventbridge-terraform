@@ -247,3 +247,48 @@ resource "aws_sqs_queue" "dlq" {
     Name = local.dlq_name
   })
 }
+
+# Archive del bus custom (extensión) — historial para replay. Se cifra con la
+# misma CMK del bus cuando kms_key_arn está definido.
+resource "aws_cloudwatch_event_archive" "this" {
+  provider = aws.project
+  count    = var.archive_config != null ? 1 : 0
+
+  name               = local.archive_name
+  event_source_arn   = one(aws_cloudwatch_event_bus.this[*].arn)
+  retention_days     = var.archive_config.retention_days
+  description        = var.archive_config.description
+  kms_key_identifier = var.kms_key_arn != "" ? var.kms_key_arn : null
+  event_pattern      = var.archive_config.event_pattern != null ? jsonencode(var.archive_config.event_pattern) : null
+
+  lifecycle {
+    precondition {
+      condition     = var.create_custom_bus
+      error_message = "archive_config requiere create_custom_bus = true."
+    }
+    precondition {
+      condition     = length(local.archive_name) <= 48
+      error_message = "El nombre del archive (${local.archive_name}) excede el límite de 48 caracteres de AWS."
+    }
+  }
+}
+
+# Schema registry de EventBridge (extensión) — contratos de evento.
+resource "aws_schemas_registry" "this" {
+  provider = aws.project
+  count    = var.schema_registry != null ? 1 : 0
+
+  name        = local.schema_registry_name
+  description = var.schema_registry.description
+
+  tags = merge(var.tags, {
+    Name = local.schema_registry_name
+  })
+
+  lifecycle {
+    precondition {
+      condition     = length(local.schema_registry_name) <= 64
+      error_message = "El nombre del schema registry (${local.schema_registry_name}) excede el límite de 64 caracteres de AWS."
+    }
+  }
+}

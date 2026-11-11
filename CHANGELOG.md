@@ -4,6 +4,30 @@ Todas las versiones notables de este módulo se documentan en este archivo.
 El formato sigue [Keep a Changelog](https://keepachangelog.com/) y el módulo
 usa [Semantic Versioning](https://semver.org/).
 
+## [v1.3.0]
+
+### Added
+- **`archive_config`**: archive del bus custom para replay
+  (`aws_cloudwatch_event_archive`). Retención, patrón de eventos y descripción
+  configurables. Se cifra con la misma CMK del bus cuando `kms_key_arn` está
+  definido. Requiere `create_custom_bus = true`.
+- **`schema_registry`**: schema registry de EventBridge para los contratos de
+  evento (`aws_schemas_registry`).
+- Outputs `archive_arn`, `archive_name`, `schema_registry_arn` y
+  `schema_registry_name` (`null` cuando no se crean).
+- `environment` acepta además `staging` y `poc`.
+
+### Changed
+- Versión mínima del provider AWS: `>= 6.2.0`, la primera que soporta
+  `kms_key_identifier` en `aws_cloudwatch_event_archive`.
+
+### Compatibilidad
+- Retrocompatible a nivel de recursos: sin `archive_config` ni
+  `schema_registry` (default `null`), el módulo genera los mismos recursos que
+  `v1.2.0`.
+- Quien use un provider AWS anterior a `6.2.0` debe actualizarlo o mantenerse
+  en `v1.2.0`.
+
 ## [v1.2.0]
 
 ### Added

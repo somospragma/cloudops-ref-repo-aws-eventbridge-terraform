@@ -1,10 +1,10 @@
 variable "environment" {
-  description = "Entorno de despliegue (dev, qa, pdn, prod)"
+  description = "Entorno de despliegue (dev, qa, staging, pdn, prod, poc)"
   type        = string
 
   validation {
-    condition     = contains(["dev", "qa", "pdn", "prod"], var.environment)
-    error_message = "El entorno debe ser uno de: dev, qa, pdn, prod."
+    condition     = contains(["dev", "qa", "staging", "pdn", "prod", "poc"], var.environment)
+    error_message = "El entorno debe ser uno de: dev, qa, staging, pdn, prod, poc."
   }
 }
 
@@ -183,4 +183,32 @@ variable "tags" {
   description = "Tags comunes para aplicar a todos los recursos del módulo"
   type        = map(string)
   default     = {}
+}
+
+# Archive del bus custom (extensión). null = no se crea. Requiere
+# create_custom_bus = true. Si kms_key_arn está definido, el archive se cifra
+# con la misma CMK del bus.
+variable "archive_config" {
+  description = "Archive del bus custom para replay. null = no se crea. retention_days = 0 es retención indefinida. event_pattern = null archiva todos los eventos del bus."
+  type = object({
+    retention_days = optional(number, 0)
+    event_pattern  = optional(any, null)
+    description    = optional(string, "")
+  })
+  default = null
+
+  validation {
+    condition     = var.archive_config == null || try(var.archive_config.retention_days >= 0, false)
+    error_message = "archive_config.retention_days debe ser 0 (indefinido) o mayor."
+  }
+}
+
+# Schema registry (EventBridge Schemas) para los contratos de evento
+# (extensión). null = no se crea.
+variable "schema_registry" {
+  description = "Schema registry de EventBridge para registrar los contratos de evento. null = no se crea."
+  type = object({
+    description = optional(string, "")
+  })
+  default = null
 }

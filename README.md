@@ -4,6 +4,8 @@
 
 Este módulo de Terraform proporciona una solución completa para la gestión de Amazon EventBridge, permitiendo la creación y configuración de buses de eventos personalizados, reglas de eventos basadas en patrones, reglas programadas (scheduled), targets de **Lambda y/o SQS**, cifrado del bus con CMK propia, y colas de mensajes fallidos (Dead Letter Queue). El módulo está diseñado para facilitar la implementación de arquitecturas event-driven en AWS, siguiendo las mejores prácticas de seguridad y nomenclatura estándar.
 
+> **Novedades v1.3.0:** **archive** del bus para replay (`archive_config`, cifrado con la misma CMK del bus) y **schema registry** de EventBridge (`schema_registry`), ambos opcionales. `environment` acepta `staging` y `poc`. Requiere AWS Provider `>= 6.2.0`. Ver [CHANGELOG.md](./CHANGELOG.md).
+>
 > **Novedades v1.2.0:** target **SQS** por regla (patrón bus → regla → cola SQS + DLQ, además del target Lambda original) y cifrado del bus custom con **CMK propia** (`kms_key_arn`). Cambios retrocompatibles a nivel de recursos; el único ajuste de interfaz es que ahora cada regla debe declarar `target_type` (`"lambda"` | `"sqs"`). Ver [CHANGELOG.md](./CHANGELOG.md).
 
 ## Características
@@ -70,7 +72,7 @@ module "eventbridge" {
 ### Requisitos Previos
 
 - Terraform >= 1.0.0
-- AWS Provider >= 4.31.0
+- AWS Provider >= 6.2.0
 - Funciones Lambda existentes para usar como targets
 - Permisos IAM apropiados para crear recursos de EventBridge
 
@@ -122,7 +124,7 @@ module "eventbridge" {
 
 | Variable | Tipo | Descripción | Validación |
 |----------|------|-------------|------------|
-| `environment` | `string` | Entorno de despliegue | Debe ser: dev, qa, pdn |
+| `environment` | `string` | Entorno de despliegue | Debe ser: dev, qa, staging, pdn, prod, poc |
 | `client` | `string` | Nombre del cliente | No puede estar vacío |
 | `project` | `string` | Nombre del proyecto | No puede estar vacío |
 
@@ -137,6 +139,27 @@ module "eventbridge" {
 | `dlq_message_retention_seconds` | `number` | `1209600` | Retención de mensajes en DLQ (14 días) |
 | `maximum_event_age_in_seconds` | `number` | `21600` | Edad máxima de eventos (6 horas) |
 | `maximum_retry_attempts` | `number` | `2` | Intentos máximos de reintento |
+| `kms_key_arn` | `string` | `""` | CMK que cifra el bus custom y su archive. Vacío = cifrado por defecto de EventBridge |
+| `archive_config` | `object` | `null` | Archive del bus para replay. Requiere `create_custom_bus = true` |
+| `schema_registry` | `object` | `null` | Schema registry de EventBridge para los contratos de evento |
+
+### Estructura de archive_config y schema_registry
+
+```hcl
+archive_config = {
+  retention_days = 365                                   # Opcional: 0 = indefinido (default)
+  event_pattern  = { "detail-type" = [{ prefix = "co.pragma.banco.pagos." }] }  # Opcional: null = todo el bus
+  description    = "Archive para replay"                 # Opcional
+}
+
+schema_registry = {
+  description = "Contratos de evento del subdominio"     # Opcional
+}
+```
+
+Nombres generados: `{client}-{project}-{environment}-event-bus-archive` (máximo 48 caracteres) y
+`{client}-{project}-{environment}-schema-registry` (máximo 64). Si se exceden, el `plan` falla con
+una precondición.
 
 ### Estructura de event_rules
 
@@ -183,6 +206,10 @@ scheduled_rules = {
 | `scheduled_rules` | Mapa de reglas programadas creadas |
 | `dlq_url` | URL de la Dead Letter Queue (si está habilitada) |
 | `dlq_arn` | ARN de la Dead Letter Queue (si está habilitada) |
+| `archive_arn` | ARN del archive (si `archive_config` está definido) |
+| `archive_name` | Nombre del archive (si `archive_config` está definido) |
+| `schema_registry_arn` | ARN del schema registry (si `schema_registry` está definido) |
+| `schema_registry_name` | Nombre del schema registry (si `schema_registry` está definido) |
 
 ## Ejemplos de Uso
 

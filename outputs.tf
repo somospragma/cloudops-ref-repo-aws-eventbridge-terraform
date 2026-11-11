@@ -37,3 +37,23 @@ output "dlq_arn" {
   description = "ARN of the Dead Letter Queue"
   value       = var.create_dlq ? aws_sqs_queue.dlq[0].arn : null
 }
+
+output "archive_arn" {
+  description = "ARN del archive del bus. null si archive_config no se define."
+  value       = var.archive_config != null ? aws_cloudwatch_event_archive.this[0].arn : null
+}
+
+output "archive_name" {
+  description = "Nombre del archive del bus. null si archive_config no se define."
+  value       = var.archive_config != null ? aws_cloudwatch_event_archive.this[0].name : null
+}
+
+output "schema_registry_arn" {
+  description = "ARN del schema registry. null si schema_registry no se define."
+  value       = var.schema_registry != null ? aws_schemas_registry.this[0].arn : null
+}
+
+output "schema_registry_name" {
+  description = "Nombre del schema registry. null si schema_registry no se define."
+  value       = var.schema_registry != null ? aws_schemas_registry.this[0].name : null
+}
